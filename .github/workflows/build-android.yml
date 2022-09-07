@@ -1,0 +1,62 @@
+# name: Android Build
+
+# on:
+#   # Triggers the workflow on push or pull request events but only for the "master" branch
+#   push:
+#     branches: -master
+
+# # A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# jobs:
+#   # This workflow contains a single job called "build"
+#   build-android:
+#     runs-on: ubuntu-latest
+#     # Steps represent a sequence of tasks that will be executed as part of the job
+#     steps:
+#       - name: Cancel Previous Runs
+#         uses: styfle/cancel-workflow-action@0.5.0
+#         with:
+#           access_token: ${{ secrets.API_KEY }}
+
+#       - name: checkout
+#         uses: actions/checkout@3
+
+#       - name: removing node_modules and install the new packages
+#         run: |
+#           echo "//registry.npmjs.org/:_authToken=${{ secrets.API_KEY }}" > .npmrc
+#           npx rimraf node_modules
+#           npm install
+#         env:
+#           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+#       - name: Setup kernel for react native, increase watchers
+#         run: echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p
+#       - name: Build Android Release
+#         run: |
+#           yarn jetifier
+#           cd android && ./gradlew clean && ./gradlew :app:assembleRelease :app:bundleRelease
+#       - name: Build release notes
+#         run: |
+#           git fetch origin develop
+#           echo "[ANDROID] Staging build!" >> android/app/build/outputs/apk/release/release-notes.txt
+#       - name: Upload Artifact
+#         uses: actions/upload-artifact@v1
+#         with:
+#           name: release-binaries
+#           path: android/app/build/outputs/apk/release/
+#   firebase-upload:
+#     needs: build-android
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Download apk from artifacts
+#         uses: actions/download-artifact@v2
+#         with:
+#           name: release-binaries
+#       - name: upload artifact to Firebase App Distribution
+#         uses: wzieba/Firebase-Distribution-Github-Action@v1
+#         with:
+#           appId: ${{secrets.FIREBASE_ANDROID_APP_ID}}
+#           token: ${{secrets.FIREBASE_TOKEN}}
+#           groups: software-team
+#           releaseNotesFile: release-notes.txt
+#           debug: true
+#           file: app-release.apk

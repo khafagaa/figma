@@ -1,0 +1,100 @@
+# name: Android Build and Deploy to firebase
+# on:
+#   push:
+#     branches:
+#       - integration/*
+# jobs:
+#   build-android:
+#     runs-on: ubuntu-latest
+#     if: "!contains(github.event.head_commit.message, 'ci skip')"
+#     timeout-minutes: 40
+#     steps:
+#       - name: Cancel Previous Runs
+#         uses: styfle/cancel-workflow-action@0.5.0
+#         with:
+#           access_token: ${{ github.token }}
+#       - uses: actions/checkout@v2
+#       - name: Cache NPM dependencies
+#         uses: actions/cache@v1
+#         with:
+#           path: node_modules
+#           key: ${{ runner.OS }}-npm-cache-${{ hashFiles('**/yarn.lock') }}
+#           restore-keys: |
+#             ${{ runner.OS }}-npm-cache-
+#       - name: Install npm dependencies
+#         run: |
+#           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+#           rm -r node_modules
+#           npm install --frozen-lockfile
+#         env:
+#           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+#       - name: Update version code
+#         run: |
+#           git config --global user.name 'Mohamed Ghobashy'
+#           git config --global user.email 'ghobashy@users.noreply.github.com'
+#           git remote set-url origin https://x-access-token:$access_token@github.com/$GITHUB_REPOSITORY
+#           git pull origin "${GITHUB_REF#refs/heads/}"
+#           npm run android:increment-code
+#       - name: Setup kernel for react native, increase watchers
+#         run: echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p
+#       - name: Build Android Release
+#         run: |
+#           yarn jetifier
+#           cd android && ./gradlew clean && ./gradlew :app:assembleRelease :app:bundleRelease
+#       - name: Build release notes
+#         run: |
+#           git fetch origin develop
+#           echo "[ANDROID] Staging build!" >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo "VersionCode: $(grep -o "versionCode\s\+\d\+" android/app/build.gradle | awk '{ print $2 }')" >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo "Branch name: " >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo "${GITHUB_REF#refs/heads/}" >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo "--------------" >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo "Ready features:" >> android/app/build/outputs/apk/release/release-notes.txt
+#           git log "origin/${GITHUB_REF#refs/heads/}...origin/develop" --oneline | grep "Merge branch" | grep -oh "\w*feature/\S*" | sort -u >> android/app/build/outputs/apk/release/release-notes.txt
+#           echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
+#           cat android/app/build/outputs/apk/release/release-notes.txt >> $GITHUB_ENV
+#           echo 'EOF' >> $GITHUB_ENV
+#         env:
+#           BRANCH: ${{ github.head_ref }}
+#       # - name: Notify on Workplace
+#       #   run: |
+#       #     curl --location --request POST 'https://graph.facebook.com/v8.0/me/messages?access_token=${{ secrets.WORKPLACE_CHAT_TOKEN }}' \
+#       #     --header ': ' \
+#       #     --form 'messaging_type=UPDATE' \
+#       #     --form 'recipient={thread_key:4626730294067190}' \
+#       #     --form 'message={text:"[ANDROID] Staging build on the way!"}'
+
+#       - name: Slack Notification
+#         uses: rtCamp/action-slack-notify@master
+#         env:
+#           SLACK_CHANNEL: tech-release-updates
+#           SLACK_COLOR: good
+#           SLACK_USERNAME: Pipeline
+#           SLACK_MESSAGE: ${{ env.RELEASE_NOTES}}
+#           SLACK_TITLE: Release Notes
+#           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+#           SLACK_FOOTER: May the forces be with you!
+
+#       - name: Upload Artifact
+#         uses: actions/upload-artifact@v1
+#         with:
+#           name: release-binaries
+#           path: android/app/build/outputs/apk/release/
+#   firebase-upload:
+#     needs: build-android
+#     runs-on: ubuntu-latest
+#     if: "!contains(github.event.head_commit.message, 'ci skip')"
+#     steps:
+#       - name: Download apk from artifacts
+#         uses: actions/download-artifact@v2
+#         with:
+#           name: release-binaries
+#       - name: upload artifact to Firebase App Distribution
+#         uses: wzieba/Firebase-Distribution-Github-Action@v1
+#         with:
+#           appId: ${{secrets.FIREBASE_ANDROID_APP_ID}}
+#           token: ${{secrets.FIREBASE_TOKEN}}
+#           groups: software-team
+#           releaseNotesFile: release-notes.txt
+#           debug: true
+#           file: app-release.apk

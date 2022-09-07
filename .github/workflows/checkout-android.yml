@@ -1,0 +1,57 @@
+name: android build
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-android:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Use Java11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Update version code
+        run: |
+          git config --global user.name 'khafagaa'
+          git config --global user.email 'ihabkhafagaaa@gmail.com'
+
+      - name: removing node_modules and install the new packages
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.API_KEY }}" > .npmrc
+          npx rimraf node_modules
+          npm install
+        env:
+          NPM_TOKEN: ${{ secrets.API_KEY }}
+
+      - name: Build debug apk
+        run: |
+          npm i jetifier
+          cd android && gradle init  && gradle :app:assembleRelease
+
+      - name: Build release notes
+        run: |
+          git fetch origin master
+          echo "[ANDROID] Staging build!" >> android/app/build/outputs/apk/release/release-notes.txt
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: release-binaries
+          path: android/app/build/outputs/apk/release/
+
+      - name: Download apk from artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: release-binaries
+      - name: upload artifact to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{secrets.FIREBASE_ANDROID_APP_ID}}
+          token: ${{secrets.REAL_FIREBASE_TOKEN}}
+          file: app-release.apk
